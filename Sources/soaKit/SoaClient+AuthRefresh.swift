@@ -16,7 +16,10 @@ extension SoaClient {
            runtimeOverride.token == refreshed.token {
             persistedTo = nil
         } else {
-            persistedTo = state.pathSource == .explicitAuthPath || state.pathSource == .platformDefaultMacOS
+            persistedTo = state.pathSource == .explicitAuthPath
+                || state.pathSource == .explicitAuthHome
+                || state.pathSource == .codexHomeEnv
+                || state.pathSource == .defaultHome
                 ? state.authPath
                 : nil
         }

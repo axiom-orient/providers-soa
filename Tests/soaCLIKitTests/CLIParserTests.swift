@@ -5,8 +5,10 @@ final class CLIParserTests: XCTestCase {
     func testParseSendWithGlobalOverrides() throws {
         let invocation = try CLIParser().parse(arguments: [
             "soa",
-            "--api-key",
+            "--json",
+            "codex",
             "--auth-path", "/tmp/auth.json",
+            "--auth-home", "/tmp/codex-home",
             "--base-url", "https://example.com",
             "--issuer", "https://issuer.example.com",
             "--client-version", "0.130.0",
@@ -15,40 +17,24 @@ final class CLIParserTests: XCTestCase {
             "--model", "gpt-5"
         ])
 
-        XCTAssertTrue(invocation.useAPIKeyTransport)
+        XCTAssertTrue(invocation.json)
         XCTAssertEqual(invocation.configuration.authPath, "/tmp/auth.json")
+        XCTAssertEqual(invocation.configuration.authHome, "/tmp/codex-home")
         XCTAssertEqual(invocation.configuration.responsesBaseURL, "https://example.com")
         XCTAssertEqual(invocation.configuration.authIssuerURL, "https://issuer.example.com")
         XCTAssertEqual(invocation.configuration.clientVersion, "0.130.0")
-        XCTAssertEqual(invocation.command, .send(prompt: "hello", model: "gpt-5", effort: nil, stream: false))
-    }
-
-    func testParseExplicitAPIKeyValue() throws {
-        let invocation = try CLIParser().parse(arguments: [
-            "soa",
-            "--api-key-value", "sk-cli-test",
-            "send",
-            "hello"
-        ])
-
-        XCTAssertTrue(invocation.useAPIKeyTransport)
-        XCTAssertEqual(invocation.configuration.apiKey, "sk-cli-test")
-        XCTAssertEqual(invocation.command, .send(prompt: "hello", model: nil, effort: nil, stream: false))
+        XCTAssertEqual(invocation.command, .codex(.send(prompt: "hello", stdin: false, model: "gpt-5", effort: nil, stream: false)))
     }
 
     func testParseAuthStatusCommand() throws {
-        let invocation = try CLIParser().parse(arguments: ["soa", "auth", "status"])
-        XCTAssertEqual(invocation.command, .authStatus)
-    }
-
-    func testParseAuthRefreshCommand() throws {
-        let invocation = try CLIParser().parse(arguments: ["soa", "auth", "refresh"])
-        XCTAssertEqual(invocation.command, .authRefresh)
+        let invocation = try CLIParser().parse(arguments: ["soa", "codex", "auth", "status"])
+        XCTAssertEqual(invocation.command, .codex(.authStatus))
     }
 
     func testParseReloginCommand() throws {
         let invocation = try CLIParser().parse(arguments: [
             "soa",
+            "codex",
             "relogin",
             "--no-browser",
             "--callback-port", "0",
@@ -59,7 +45,7 @@ final class CLIParserTests: XCTestCase {
             "--issuer", "https://issuer.example.com"
         ])
 
-        guard case let .relogin(options) = invocation.command else {
+        guard case let .codex(.relogin(options)) = invocation.command else {
             return XCTFail("expected relogin command")
         }
         XCTAssertFalse(options.openBrowser)
@@ -69,5 +55,21 @@ final class CLIParserTests: XCTestCase {
         XCTAssertEqual(options.clientID, "client_123")
         XCTAssertEqual(options.allowedWorkspaceID, "ws_123")
         XCTAssertEqual(options.issuer, "https://issuer.example.com")
+    }
+
+    func testParseGeminiGenerateCommand() throws {
+        let invocation = try CLIParser().parse(arguments: [
+            "soa",
+            "--json",
+            "gemini",
+            "generate",
+            "hello",
+            "--model", "flash",
+            "--adapter-path", "/tmp/adapter.js",
+            "--node-path", "/tmp/node"
+        ])
+
+        XCTAssertTrue(invocation.json)
+        XCTAssertEqual(invocation.command, .gemini(.generate(prompt: "hello", model: "flash", adapterPath: "/tmp/adapter.js", nodePath: "/tmp/node")))
     }
 }

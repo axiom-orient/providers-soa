@@ -507,10 +507,11 @@ extension SoaClient {
         refreshed: RefreshedTokens,
         state: AuthState
     ) throws -> String? {
-        let location = try AuthPathResolver(authPath: configuration.authPath).resolve()
-        guard case .file(let path) = location.kind else {
-            return nil
-        }
+        let location = try AuthPathResolver(
+            authPath: configuration.authPath,
+            authHome: configuration.authHome
+        ).resolve()
+        let path = location.path
         guard FileManager.default.fileExists(atPath: path) else {
             return nil
         }

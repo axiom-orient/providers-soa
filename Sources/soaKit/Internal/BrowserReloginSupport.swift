@@ -360,7 +360,7 @@ private func oauthCallbackErrorMessage(errorCode: String, description: String?) 
 
 private func apiKeyExchangeFailurePageMessage(_ error: Error) -> String {
     if String(describing: error).contains("organization_id") {
-        return "Sign-in succeeded, but OpenAI Platform setup is incomplete for API-key issuance. Complete organization/project setup or use an explicit OPENAI_API_KEY, then retry."
+        return "Sign-in succeeded, but OpenAI Platform setup is incomplete for API-key issuance. Complete organization/project setup or provide a valid auth.json, then retry."
     }
     return "Sign-in succeeded but the API-key exchange failed. Return to the application for details."
 }

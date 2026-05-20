@@ -28,7 +28,7 @@ extension SoaClient {
                 location: .init(
                     descriptor: runtimeOverride.authState.authPath,
                     source: runtimeOverride.authState.pathSource,
-                    kind: .file(runtimeOverride.authState.authPath)
+                    path: runtimeOverride.authState.authPath
                 ),
                 state: runtimeOverride.authState,
                 normalized: nil,
@@ -36,90 +36,11 @@ extension SoaClient {
             )
         }
 
-        let primaryLocation = try AuthPathResolver(authPath: configuration.authPath).resolve()
-        let primary = try inspect(location: primaryLocation)
-
-        if shouldKeepPrimary(primary.state) {
-            return primary
-        }
-
-        if let apiKeyFallback = inspectAPIKeyFallback() {
-            return apiKeyFallback
-        }
-
-        return primary
-    }
-
-    private func inspect(location: ResolvedCredentialLocation) throws -> AuthInspection {
-        switch location.kind {
-        case .file(let path):
-            return try inspectFileAuth(path: path, source: location.source)
-        case .keychain(let service):
-            return try inspectKeychainAuth(descriptor: location.descriptor, source: location.source, service: service)
-        }
-    }
-
-    private func shouldKeepPrimary(_ state: AuthState) -> Bool {
-        switch configuration.preferredTransportKind {
-        case .some(.chatGPTBackend):
-            return true
-        case .some(.openAIAPI):
-            return state.transportKind == .openAIAPI
-        case nil:
-            return state.isReady
-        }
-    }
-
-    private func inspectAPIKeyFallback() -> AuthInspection? {
-        guard configuration.preferredTransportKind != .chatGPTBackend else {
-            return nil
-        }
-
-        if let explicitAPIKey = configuration.apiKey?.nilIfEmpty {
-            return inspectionForAPIKey(
-                explicitAPIKey,
-                descriptor: "config://openai-api-key",
-                source: .configurationAPIKey,
-                remediationHint: "Primary auth.json was unavailable or incompatible, so an injected OpenAI API key is active."
-            )
-        }
-
-        if let environmentAPIKey = ProcessInfo.processInfo.environment["OPENAI_API_KEY"]?.nilIfEmpty {
-            return inspectionForAPIKey(
-                environmentAPIKey,
-                descriptor: "env://OPENAI_API_KEY",
-                source: .environmentAPIKey,
-                remediationHint: "Primary auth.json was unavailable or incompatible, so OPENAI_API_KEY is active."
-            )
-        }
-
-        return nil
-    }
-
-    private func inspectionForAPIKey(
-        _ apiKey: String,
-        descriptor: String,
-        source: ResolvedAuthPathSource,
-        remediationHint: String
-    ) -> AuthInspection {
-        let normalized = normalizedCredential(from: .openAIAPIKey(apiKey))
-        return AuthInspection(
-            location: .init(descriptor: descriptor, source: source, kind: .file(descriptor)),
-            state: AuthState(
-                authPath: descriptor,
-                pathSource: source,
-                credentialShape: normalized.shape,
-                readiness: .readyOpenAI,
-                issueCategory: nil,
-                remediationHint: remediationHint,
-                hasOpenAIAPIKey: true,
-                hasRefreshToken: false,
-                lastRefresh: nil,
-                accountID: nil
-            ),
-            normalized: normalized,
-            parsedFile: nil
-        )
+        let location = try AuthPathResolver(
+            authPath: configuration.authPath,
+            authHome: configuration.authHome
+        ).resolve()
+        return try inspectFileAuth(path: location.path, source: location.source)
     }
 
     private func inspectFileAuth(path: String, source: ResolvedAuthPathSource) throws -> AuthInspection {
@@ -127,21 +48,21 @@ extension SoaClient {
             let raw = try readAuthJSON(path: path)
             let parsed = try parseAuthJSON(raw)
             return AuthInspection(
-                location: .init(descriptor: path, source: source, kind: .file(path)),
+                location: .init(descriptor: path, source: source, path: path),
                 state: buildState(descriptor: path, source: source, normalized: parsed.normalized),
                 normalized: parsed.normalized,
                 parsedFile: parsed
             )
         } catch let error as SoaError where error.category == .authMissing {
             return AuthInspection(
-                location: .init(descriptor: path, source: source, kind: .file(path)),
+                location: .init(descriptor: path, source: source, path: path),
                 state: AuthState(
                     authPath: path,
                     pathSource: source,
                     credentialShape: .unknown,
-                    readiness: .missing,
+                    readiness: .authRefreshRequired,
                     issueCategory: .authMissing,
-                    remediationHint: "Provide ~/.codex/auth.json on macOS or set authPath explicitly.",
+                    remediationHint: "Provide a valid file-backed auth cache.",
                     hasOpenAIAPIKey: false,
                     hasRefreshToken: false,
                     lastRefresh: nil,
@@ -152,51 +73,8 @@ extension SoaClient {
             )
         } catch let error as SoaError {
             return AuthInspection(
-                location: .init(descriptor: path, source: source, kind: .file(path)),
+                location: .init(descriptor: path, source: source, path: path),
                 state: buildInvalidState(descriptor: path, source: source, category: error.category),
-                normalized: nil,
-                parsedFile: nil
-            )
-        }
-    }
-
-    private func inspectKeychainAuth(
-        descriptor: String,
-        source: ResolvedAuthPathSource,
-        service: String
-    ) throws -> AuthInspection {
-        do {
-            let credential = try SoaCredentialStore(service: service).load()
-            guard let credential else {
-                return AuthInspection(
-                    location: .init(descriptor: descriptor, source: source, kind: .keychain(service: service)),
-                    state: AuthState(
-                        authPath: descriptor,
-                        pathSource: source,
-                        credentialShape: .unknown,
-                        readiness: .missing,
-                        issueCategory: .authMissing,
-                        remediationHint: "Inject a credential into Keychain with SoaCredentialStore.save(...) or importAuthJSON(...).",
-                        hasOpenAIAPIKey: false,
-                        hasRefreshToken: false,
-                        lastRefresh: nil,
-                        accountID: nil
-                    ),
-                    normalized: nil,
-                    parsedFile: nil
-                )
-            }
-            let normalized = normalizedCredential(from: credential)
-            return AuthInspection(
-                location: .init(descriptor: descriptor, source: source, kind: .keychain(service: service)),
-                state: buildState(descriptor: descriptor, source: source, normalized: normalized),
-                normalized: normalized,
-                parsedFile: nil
-            )
-        } catch let error as SoaError {
-            return AuthInspection(
-                location: .init(descriptor: descriptor, source: source, kind: .keychain(service: service)),
-                state: buildInvalidState(descriptor: descriptor, source: source, category: error.category),
                 normalized: nil,
                 parsedFile: nil
             )
@@ -248,7 +126,7 @@ extension SoaClient {
                 }
                 throw SoaError.credentialInsufficient()
             }
-        case .missing, .invalid:
+        case .authRefreshRequired, .invalid:
             throw mapStateIssueToError(inspection.state)
         }
     }
@@ -307,8 +185,8 @@ private func buildState(
         remediationHint = normalized.chatGPTRefreshToken != nil && desktopRefreshSupported
             ? "Ready for Codex ChatGPT backend requests. macOS file-backed refresh is available if the access token expires."
             : "Ready for Codex ChatGPT backend requests."
-    case .missing:
-        remediationHint = "Inject a credential or provide auth.json."
+    case .authRefreshRequired:
+        remediationHint = "Provide a valid file-backed auth cache."
     case .invalid:
         remediationHint = normalized.chatGPTRefreshToken != nil && desktopRefreshSupported
             ? "The credential is not currently usable, but the file includes refresh_token and may be recoverable with refreshAuth()."
@@ -355,10 +233,6 @@ private func mapStateIssueToError(_ state: AuthState) -> SoaError {
         return .authMalformed("the current credential source is malformed")
     case .some(.authUnsupported):
         return .authUnsupported("the current credential source shape is unsupported")
-    case .some(.keychainUnavailable):
-        return .keychainUnavailable()
-    case .some(.keychainFailure):
-        return .keychainFailure("the keychain item could not be loaded")
     case .some(.authReadFailed):
         return .authReadFailed(path: state.authPath, "the credential source could not be read")
     default:

@@ -1,0 +1,22 @@
+{
+  "name": "soa-gemini-core-adapter",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/main.js"
+  },
+  "dependencies": {
+    "@google/gemini-cli-core": "0.44.0-nightly.20260518.g5611ff40e"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.30",
+    "typescript": "^5.3.3"
+  },
+  "overrides": {
+    "@tootallnate/once": "3.0.1"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

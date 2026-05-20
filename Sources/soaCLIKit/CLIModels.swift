@@ -3,7 +3,7 @@ import Foundation
 
 public struct ProviderConfigurationOverrides: Sendable, Equatable {
     public var authPath: String?
-    public var apiKey: String?
+    public var authHome: String?
     public var responsesBaseURL: String?
     public var defaultModel: String?
     public var defaultReasoningEffort: ReasoningEffort?
@@ -15,7 +15,7 @@ public struct ProviderConfigurationOverrides: Sendable, Equatable {
 
     public init(
         authPath: String? = nil,
-        apiKey: String? = nil,
+        authHome: String? = nil,
         responsesBaseURL: String? = nil,
         defaultModel: String? = nil,
         defaultReasoningEffort: ReasoningEffort? = nil,
@@ -26,7 +26,7 @@ public struct ProviderConfigurationOverrides: Sendable, Equatable {
         clientRequestID: String? = nil
     ) {
         self.authPath = authPath
-        self.apiKey = apiKey
+        self.authHome = authHome
         self.responsesBaseURL = responsesBaseURL
         self.defaultModel = defaultModel
         self.defaultReasoningEffort = defaultReasoningEffort
@@ -37,11 +37,11 @@ public struct ProviderConfigurationOverrides: Sendable, Equatable {
         self.clientRequestID = clientRequestID
     }
 
-    func applying(transport: ResponsesTransportKind) -> SoaConfiguration {
+    func applying(preferredTransport: ResponsesTransportKind? = nil) -> SoaConfiguration {
         SoaConfiguration(
             authPath: authPath,
-            apiKey: apiKey,
-            preferredTransportKind: transport,
+            authHome: authHome,
+            preferredTransportKind: preferredTransport,
             defaultModel: defaultModel,
             defaultReasoningEffort: defaultReasoningEffort,
             responsesBaseURL: responsesBaseURL,
@@ -55,27 +55,36 @@ public struct ProviderConfigurationOverrides: Sendable, Equatable {
 }
 
 public enum CLICommand: Sendable, Equatable {
-    case send(prompt: String, model: String?, effort: String?, stream: Bool)
+    case codex(CodexCommand)
+    case gemini(GeminiCommand)
+}
+
+public enum CodexCommand: Sendable, Equatable {
+    case send(prompt: String?, stdin: Bool, model: String?, effort: String?, stream: Bool)
     case modelsList
     case authStatus
-    case authRefresh
     case relogin(BrowserReloginOptions)
+}
+
+public enum GeminiCommand: Sendable, Equatable {
+    case generate(prompt: String, model: String?, adapterPath: String, nodePath: String)
+    case models(adapterPath: String, nodePath: String)
 }
 
 public struct CLIInvocation: Sendable, Equatable {
     public var executableName: String
-    public var useAPIKeyTransport: Bool
+    public var json: Bool
     public var configuration: ProviderConfigurationOverrides
     public var command: CLICommand
 
     public init(
         executableName: String,
-        useAPIKeyTransport: Bool,
+        json: Bool = false,
         configuration: ProviderConfigurationOverrides,
         command: CLICommand
     ) {
         self.executableName = executableName
-        self.useAPIKeyTransport = useAPIKeyTransport
+        self.json = json
         self.configuration = configuration
         self.command = command
     }

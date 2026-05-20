@@ -1,55 +1,46 @@
 import Foundation
 
 struct ResolvedCredentialLocation: Sendable {
-    enum Kind: Sendable {
-        case file(String)
-        case keychain(service: String)
-    }
-
     let descriptor: String
     let source: ResolvedAuthPathSource
-    let kind: Kind
+    let path: String
 }
 
 struct AuthPathResolver {
     static let maxAuthFileSizeBytes = 262_144
 
     let authPath: String?
+    let authHome: String?
 
     func resolve() throws -> ResolvedCredentialLocation {
         if let authPath = authPath?.nilIfEmpty {
-            let resolved = resolvePath(authPath)
-            return .init(descriptor: resolved, source: .explicitAuthPath, kind: .file(resolved))
+            let resolved = try resolveAbsolutePath(authPath, label: "authPath")
+            return .init(descriptor: resolved, source: .explicitAuthPath, path: resolved)
         }
-        #if os(macOS)
-        let resolved = defaultMacOSAuthPath()
-        return .init(descriptor: resolved, source: .platformDefaultMacOS, kind: .file(resolved))
-        #else
-        return .init(
-            descriptor: "keychain://\(SoaCredentialStore.defaultService)/default",
-            source: .platformDefaultKeychain,
-            kind: .keychain(service: SoaCredentialStore.defaultService)
-        )
-        #endif
+        if let authHome = authHome?.nilIfEmpty {
+            let resolved = try resolveAbsolutePath(authHome, label: "authHome")
+            let path = URL(fileURLWithPath: resolved).appendingPathComponent("auth.json").standardizedFileURL.path
+            return .init(descriptor: path, source: .explicitAuthHome, path: path)
+        }
+        if let codexHome = ProcessInfo.processInfo.environment["CODEX_HOME"]?.nilIfEmpty {
+            let resolved = try resolveAbsolutePath(codexHome, label: "CODEX_HOME")
+            let path = URL(fileURLWithPath: resolved).appendingPathComponent("auth.json").standardizedFileURL.path
+            return .init(descriptor: path, source: .codexHomeEnv, path: path)
+        }
+        let path = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(SoaClient.defaultMacOSAuthRelativePath)
+            .standardizedFileURL
+            .path
+        return .init(descriptor: path, source: .defaultHome, path: path)
     }
 }
 
-#if os(macOS)
-private func defaultMacOSAuthPath() -> String {
-    FileManager.default.homeDirectoryForCurrentUser
-        .appendingPathComponent(SoaClient.defaultMacOSAuthRelativePath)
-        .standardizedFileURL
-        .path
-}
-#endif
-
-private func resolvePath(_ raw: String) -> String {
+private func resolveAbsolutePath(_ raw: String, label: String) throws -> String {
     let expanded = NSString(string: raw).expandingTildeInPath
-    if (expanded as NSString).isAbsolutePath {
-        return URL(fileURLWithPath: expanded).standardizedFileURL.path
+    guard (expanded as NSString).isAbsolutePath else {
+        throw SoaError.invalidConfiguration("\(label) must be an absolute path")
     }
-    let cwd = FileManager.default.currentDirectoryPath
-    return URL(fileURLWithPath: cwd).appendingPathComponent(expanded).standardizedFileURL.path
+    return URL(fileURLWithPath: expanded).standardizedFileURL.path
 }
 
 func readAuthJSON(path: String) throws -> JSONValue {

@@ -3,13 +3,13 @@ import Foundation
 public enum AuthReadiness: String, Sendable, Equatable, Codable {
     case readyOpenAI = "ready_openai"
     case readyChatGPT = "ready_chatgpt"
-    case missing = "missing"
+    case authRefreshRequired = "auth_refresh_required"
     case invalid = "invalid"
 
     public var isReady: Bool {
         switch self {
         case .readyOpenAI, .readyChatGPT: true
-        case .missing, .invalid: false
+        case .authRefreshRequired, .invalid: false
         }
     }
 
@@ -17,7 +17,7 @@ public enum AuthReadiness: String, Sendable, Equatable, Codable {
         switch self {
         case .readyOpenAI: .openAIAPI
         case .readyChatGPT: .chatGPTBackend
-        case .missing, .invalid: nil
+        case .authRefreshRequired, .invalid: nil
         }
     }
 }
@@ -31,10 +31,9 @@ public enum CredentialShape: String, Sendable, Equatable, Codable {
 
 public enum ResolvedAuthPathSource: String, Sendable, Equatable, Codable {
     case explicitAuthPath = "explicit_auth_path"
-    case platformDefaultMacOS = "platform_default_macos"
-    case platformDefaultKeychain = "platform_default_keychain"
-    case configurationAPIKey = "configuration_api_key"
-    case environmentAPIKey = "environment_api_key"
+    case explicitAuthHome = "explicit_auth_home"
+    case codexHomeEnv = "codex_home_env"
+    case defaultHome = "default_home"
 }
 
 public struct AuthState: Sendable, Equatable {
@@ -834,7 +833,7 @@ public struct AuthRefreshOutcome: Sendable, Equatable {
 
 public struct SoaConfiguration: Sendable, Equatable {
     public var authPath: String?
-    public var apiKey: String?
+    public var authHome: String?
     public var preferredTransportKind: ResponsesTransportKind?
     public var defaultModel: String?
     public var defaultReasoningEffort: ReasoningEffort?
@@ -847,7 +846,7 @@ public struct SoaConfiguration: Sendable, Equatable {
 
     public init(
         authPath: String? = nil,
-        apiKey: String? = nil,
+        authHome: String? = nil,
         preferredTransportKind: ResponsesTransportKind? = nil,
         defaultModel: String? = nil,
         defaultReasoningEffort: ReasoningEffort? = nil,
@@ -859,7 +858,7 @@ public struct SoaConfiguration: Sendable, Equatable {
         clientRequestID: String? = nil
     ) {
         self.authPath = authPath
-        self.apiKey = apiKey
+        self.authHome = authHome
         self.preferredTransportKind = preferredTransportKind
         self.defaultModel = defaultModel
         self.defaultReasoningEffort = defaultReasoningEffort
@@ -869,51 +868,6 @@ public struct SoaConfiguration: Sendable, Equatable {
         self.organization = organization
         self.project = project
         self.clientRequestID = clientRequestID
-    }
-}
-
-public enum SoaCredential: Sendable, Equatable {
-    case openAIAPIKey(String)
-    case chatGPT(accessToken: String, accountID: String)
-}
-
-extension SoaCredential: Codable {
-    private enum CodingKeys: String, CodingKey {
-        case kind
-        case openAIAPIKey
-        case accessToken
-        case accountID
-    }
-
-    private enum Kind: String, Codable {
-        case openAIAPIKey
-        case chatGPT
-    }
-
-    public init(from decoder: any Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        switch try container.decode(Kind.self, forKey: .kind) {
-        case .openAIAPIKey:
-            self = .openAIAPIKey(try container.decode(String.self, forKey: .openAIAPIKey))
-        case .chatGPT:
-            self = .chatGPT(
-                accessToken: try container.decode(String.self, forKey: .accessToken),
-                accountID: try container.decode(String.self, forKey: .accountID)
-            )
-        }
-    }
-
-    public func encode(to encoder: any Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        switch self {
-        case .openAIAPIKey(let key):
-            try container.encode(Kind.openAIAPIKey, forKey: .kind)
-            try container.encode(key, forKey: .openAIAPIKey)
-        case let .chatGPT(accessToken, accountID):
-            try container.encode(Kind.chatGPT, forKey: .kind)
-            try container.encode(accessToken, forKey: .accessToken)
-            try container.encode(accountID, forKey: .accountID)
-        }
     }
 }
 

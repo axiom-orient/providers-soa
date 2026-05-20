@@ -53,7 +53,7 @@ final class AuthStateTests: XCTestCase {
         let path = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID().uuidString).appendingPathComponent("auth.json").path
         let client = try SoaClient(configuration: .init(authPath: path))
         let state = try await client.authState()
-        XCTAssertEqual(state.readiness, .missing)
+        XCTAssertEqual(state.readiness, .authRefreshRequired)
         XCTAssertEqual(state.issueCategory, .authMissing)
     }
 
@@ -69,59 +69,15 @@ final class AuthStateTests: XCTestCase {
         XCTAssertEqual(state.issueCategory, .authMalformed)
     }
 
-    func testConfigurationAPIKeyFallbackWinsWhenAuthMissing() async throws {
-        let path = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID().uuidString).appendingPathComponent("auth.json").path
-        let client = try SoaClient(configuration: .init(authPath: path, apiKey: "sk-test", preferredTransportKind: .openAIAPI))
-        let state = try await client.authState()
-
-        XCTAssertEqual(state.readiness, .readyOpenAI)
-        XCTAssertEqual(state.pathSource, .configurationAPIKey)
-        XCTAssertEqual(state.authPath, "config://openai-api-key")
-        XCTAssertTrue(state.hasOpenAIAPIKey)
-    }
-
-    func testConfigurationAPIKeyFallbackWinsWhenAuthCannotSatisfyOpenAITransport() async throws {
+    func testAuthHomeResolvesAuthJSON() async throws {
         let directory = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let path = directory.appendingPathComponent("auth.json").path
-        try #"{"access_token":"atk_test","account_id":"ws_123"}"#.write(toFile: path, atomically: true, encoding: .utf8)
+        try #"{"OPENAI_API_KEY":"sk-proj-test"}"#.write(to: directory.appendingPathComponent("auth.json"), atomically: true, encoding: .utf8)
 
-        let client = try SoaClient(configuration: .init(authPath: path, apiKey: "sk-test", preferredTransportKind: .openAIAPI))
+        let client = try SoaClient(configuration: .init(authHome: directory.path, preferredTransportKind: .openAIAPI))
         let state = try await client.authState()
 
+        XCTAssertEqual(state.pathSource, .explicitAuthHome)
         XCTAssertEqual(state.readiness, .readyOpenAI)
-        XCTAssertEqual(state.pathSource, .configurationAPIKey)
-    }
-
-    func testEnvironmentAPIKeyFallbackWinsWhenConfiguredPathMissing() async throws {
-        setenv("OPENAI_API_KEY", "sk-env-test", 1)
-        defer { unsetenv("OPENAI_API_KEY") }
-
-        let path = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID().uuidString).appendingPathComponent("auth.json").path
-        let client = try SoaClient(configuration: .init(authPath: path, preferredTransportKind: .openAIAPI))
-        let state = try await client.authState()
-
-        XCTAssertEqual(state.readiness, .readyOpenAI)
-        XCTAssertEqual(state.pathSource, .environmentAPIKey)
-        XCTAssertEqual(state.authPath, "env://OPENAI_API_KEY")
-    }
-
-    func testImportAuthJSONPrefersChatGPTCredentialWhenBothArePresent() throws {
-        let json = #"{"OPENAI_API_KEY":"sk-test","tokens":{"access_token":"atk_test","account_id":"ws_123"}}"#
-        let credential = try SoaCredentialStore().importAuthJSONForTesting(json)
-        XCTAssertEqual(credential, .chatGPT(accessToken: "atk_test", accountID: "ws_123"))
-    }
-}
-
-private extension SoaCredentialStore {
-    func importAuthJSONForTesting(_ json: String) throws -> SoaCredential {
-        guard let data = json.data(using: .utf8) else {
-            throw SoaError.authMalformed("auth payload is not valid UTF-8")
-        }
-        let parsed = try parseAuthJSON(try JSONValue.decode(from: data))
-        guard let credential = parsed.normalized.preferredCredential(for: nil) else {
-            throw SoaError.credentialInsufficient()
-        }
-        return credential
     }
 }

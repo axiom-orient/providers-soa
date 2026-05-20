@@ -26,26 +26,40 @@ public struct CLIApplication {
     }
 
     private func execute(invocation: CLIInvocation) async throws -> String {
-        let transport: ResponsesTransportKind = invocation.useAPIKeyTransport ? .openAIAPI : .chatGPTBackend
-        let configuration = invocation.configuration.applying(transport: transport)
+        switch invocation.command {
+        case .codex(let command):
+            return try await executeCodex(invocation: invocation, command: command)
+        case .gemini(let command):
+            return try executeGemini(json: invocation.json, command: command)
+        }
+    }
+
+    private func executeCodex(invocation: CLIInvocation, command: CodexCommand) async throws -> String {
+        let configuration = invocation.configuration.applying(preferredTransport: .chatGPTBackend)
         let client = try SoaClient(configuration: configuration)
 
-        switch invocation.command {
-        case let .send(prompt, model, effort, stream):
-            var request = ResponsesRequest(prompt)
+        switch command {
+        case let .send(prompt, stdin, model, effort, stream):
+            let resolvedPrompt = try resolvePrompt(prompt: prompt, stdin: stdin)
+            var request = ResponsesRequest(resolvedPrompt)
             if let model { request = request.withModel(model) }
             if let effort { request = try request.tryWithReasoningEffort(choice: effort) }
             if stream {
                 let responseStream = try await client.streamResponse(request)
                 var output = ""
                 for try await event in responseStream.events {
-                    if let chunk = event.textChunk {
+                    if invocation.json {
+                        output += try CLITextRenderer.renderStreamEventJSON(event) + "\n"
+                    } else if let chunk = event.textChunk {
                         output += chunk
                     }
                 }
-                return output + "\n"
+                return invocation.json ? output : output + "\n"
             }
             let response = try await client.createResponse(request)
+            if invocation.json {
+                return try CLITextRenderer.renderSendJSON(response) + "\n"
+            }
             if let outputText = response.outputText {
                 return outputText + "\n"
             }
@@ -53,6 +67,10 @@ public struct CLIApplication {
 
         case .modelsList:
             let models = try await client.listModels()
+            let transport = try await client.transportKind()
+            if !invocation.json {
+                return CLITextRenderer.renderModels(models, transport: transport) + "\n"
+            }
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
             let data = try encoder.encode(models)
@@ -60,23 +78,64 @@ public struct CLIApplication {
 
         case .authStatus:
             let state = try await client.authState()
+            if invocation.json {
+                return try CLITextRenderer.renderAuthStatusJSON(state) + "\n"
+            }
             return CLITextRenderer.renderAuthStatus(state) + "\n"
 
-        case .authRefresh:
-            if invocation.useAPIKeyTransport {
-                throw CLIParseSignal.failure("--api-key cannot be used with auth refresh")
-            }
-            let outcome = try await client.refreshAuth()
-            return CLITextRenderer.renderAuthRefresh(outcome) + "\n"
-
         case let .relogin(options):
-            if invocation.useAPIKeyTransport {
-                throw CLIParseSignal.failure("--api-key cannot be used with relogin")
-            }
             let session = try await client.startBrowserReloginSession(options: options)
-            progress(CLITextRenderer.renderReloginStarted(authURL: session.authURL, callbackPort: session.callbackPort, openedBrowser: options.openBrowser) + "\n")
+            if invocation.json {
+                progress(try CLITextRenderer.renderReloginStartedJSON(authURL: session.authURL, callbackPort: session.callbackPort) + "\n")
+            } else {
+                progress(CLITextRenderer.renderReloginStarted(authURL: session.authURL, callbackPort: session.callbackPort, openedBrowser: options.openBrowser) + "\n")
+            }
             let outcome = try await session.wait()
+            if invocation.json {
+                return try CLITextRenderer.renderBrowserReloginJSON(outcome) + "\n"
+            }
             return CLITextRenderer.renderBrowserRelogin(outcome) + "\n"
         }
+    }
+
+    private func executeGemini(json: Bool, command: GeminiCommand) throws -> String {
+        switch command {
+        case let .generate(prompt, model, adapterPath, nodePath):
+            var request = GeminiGenerateRequest(prompt)
+            if let model {
+                request = request.withModel(model)
+            }
+            let response = try GeminiClient(nodePath: nodePath, adapterPath: adapterPath).generate(request)
+            if json {
+                return try prettyJSON(response) + "\n"
+            }
+            return response.text + "\n"
+        case let .models(adapterPath, nodePath):
+            let response = try GeminiClient(nodePath: nodePath, adapterPath: adapterPath).models()
+            if json {
+                return try prettyJSON(response) + "\n"
+            }
+            return CLITextRenderer.renderGeminiModels(response) + "\n"
+        }
+    }
+
+    private func resolvePrompt(prompt: String?, stdin: Bool) throws -> String {
+        switch (prompt, stdin) {
+        case let (.some(prompt), false):
+            return prompt
+        case (.none, true):
+            let data = FileHandle.standardInput.readDataToEndOfFile()
+            return String(decoding: data, as: UTF8.self)
+        case (.some, true):
+            throw CLIParseSignal.failure("prompt argument and --stdin cannot be used together")
+        case (.none, false):
+            throw CLIParseSignal.failure("send requires a prompt or --stdin")
+        }
+    }
+
+    private func prettyJSON<T: Encodable>(_ value: T) throws -> String {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        return String(decoding: try encoder.encode(value), as: UTF8.self)
     }
 }

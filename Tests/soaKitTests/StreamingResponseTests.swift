@@ -45,9 +45,14 @@ final class StreamingResponseTests: XCTestCase {
             )
         }
 
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let authPath = directory.appendingPathComponent("auth.json").path
+        try #"{"OPENAI_API_KEY":"sk-test"}"#.write(toFile: authPath, atomically: true, encoding: .utf8)
+
         let client = try SoaClient(
             configuration: SoaConfiguration(
-                apiKey: "sk-test",
+                authPath: authPath,
                 preferredTransportKind: .openAIAPI,
                 defaultModel: "gpt-5-mini",
                 responsesBaseURL: "https://stub.test",

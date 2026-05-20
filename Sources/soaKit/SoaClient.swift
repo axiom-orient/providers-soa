@@ -23,7 +23,7 @@ public actor SoaClient {
     ) throws {
         self.configuration = SoaConfiguration(
             authPath: configuration.authPath?.nilIfEmpty,
-            apiKey: configuration.apiKey?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty,
+            authHome: configuration.authHome?.nilIfEmpty,
             preferredTransportKind: configuration.preferredTransportKind,
             defaultModel: configuration.defaultModel?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty,
             defaultReasoningEffort: configuration.defaultReasoningEffort,
@@ -81,13 +81,11 @@ public actor SoaClient {
         }
         let state = try authState()
         switch state.pathSource {
-        case .explicitAuthPath, .platformDefaultMacOS:
+        case .explicitAuthPath, .explicitAuthHome, .codexHomeEnv, .defaultHome:
             return SharedCredentialCoordinationKey(
                 transport: .chatGPTBackend,
                 descriptor: state.authPath
             )
-        case .platformDefaultKeychain, .configurationAPIKey, .environmentAPIKey:
-            return nil
         }
     }
 

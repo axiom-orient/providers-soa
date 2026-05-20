@@ -16,24 +16,6 @@ struct NormalizedCredential: Sendable, Equatable {
         return .invalid
     }
 
-    func preferredCredential(for preferredTransport: ResponsesTransportKind?) -> SoaCredential? {
-        switch preferredTransport {
-        case .some(.openAIAPI):
-            guard let openAIAPIKey else { return nil }
-            return .openAIAPIKey(openAIAPIKey)
-        case .some(.chatGPTBackend):
-            guard let chatGPTAccessToken, let accountID else { return nil }
-            return .chatGPT(accessToken: chatGPTAccessToken, accountID: accountID)
-        case nil:
-            if let chatGPTAccessToken, let accountID {
-                return .chatGPT(accessToken: chatGPTAccessToken, accountID: accountID)
-            }
-            if let openAIAPIKey {
-                return .openAIAPIKey(openAIAPIKey)
-            }
-            return nil
-        }
-    }
 }
 
 struct ParsedAuthFile: Sendable, Equatable {
@@ -121,33 +103,6 @@ func parseAuthJSON(_ raw: JSONValue) throws -> ParsedAuthFile {
     }
 
     return ParsedAuthFile(raw: raw, normalized: normalized)
-}
-
-func normalizedCredential(from credential: SoaCredential) -> NormalizedCredential {
-    switch credential {
-    case .openAIAPIKey(let key):
-        return .init(
-            authMode: "apikey",
-            shape: .apiKey,
-            openAIAPIKey: key.nilIfEmpty,
-            chatGPTAccessToken: nil,
-            chatGPTRefreshToken: nil,
-            chatGPTIDToken: nil,
-            accountID: nil,
-            lastRefresh: nil
-        )
-    case let .chatGPT(accessToken, accountID):
-        return .init(
-            authMode: "chatgptauthtokens",
-            shape: .chatgptExternalTokens,
-            openAIAPIKey: nil,
-            chatGPTAccessToken: accessToken.nilIfEmpty,
-            chatGPTRefreshToken: nil,
-            chatGPTIDToken: nil,
-            accountID: accountID.nilIfEmpty,
-            lastRefresh: Date()
-        )
-    }
 }
 
 func rewriteRefreshedAuthJSON(parsed: ParsedAuthFile, refreshed: RefreshedAuthPayload) throws -> JSONValue {

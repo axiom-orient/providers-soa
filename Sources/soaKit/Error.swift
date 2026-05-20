@@ -8,8 +8,6 @@ public enum ErrorCategory: String, Sendable, Equatable {
     case credentialInsufficient = "credential_insufficient"
     case authRefreshUnavailable = "auth_refresh_unavailable"
     case authRefreshFailed = "auth_refresh_failed"
-    case keychainUnavailable = "keychain_unavailable"
-    case keychainFailure = "keychain_failure"
     case responsesRequestFailed = "responses_request_failed"
     case invalidConfiguration = "invalid_configuration"
     case operationInProgress = "operation_in_progress"
@@ -51,7 +49,7 @@ extension SoaError {
         .init(
             category: .authMissing,
             message: "credential source is missing at \(path)",
-            remediationHint: "On iPhone/iPad, import auth.json into Keychain or inject an API key. On macOS, provide ~/.codex/auth.json, set authPath, or fall back to OPENAI_API_KEY.",
+            remediationHint: "Provide a file-backed Codex auth.json via authPath, authHome, CODEX_HOME, or ~/.codex/auth.json.",
             path: path
         )
     }
@@ -84,8 +82,8 @@ extension SoaError {
     static func credentialInsufficient() -> Self {
         .init(
             category: .credentialInsufficient,
-            message: "credential is insufficient for the selected transport",
-            remediationHint: "Use an OpenAI API key for OpenAI transport, or inject a ChatGPT access token plus account_id for ChatGPT transport. On macOS, auth refresh also requires refresh_token in the file-backed auth source."
+            message: "credential is insufficient for the configured backend",
+            remediationHint: "Use an auth.json with ChatGPT access token plus account_id for the configured backend. Refresh requires refresh_token in the file-backed auth source."
         )
     }
 
@@ -93,7 +91,7 @@ extension SoaError {
         .init(
             category: .authRefreshUnavailable,
             message: message.map { "credential refresh is unavailable: \(sanitizeMessage($0))" } ?? "credential refresh is unavailable for the current source",
-            remediationHint: "Refresh is supported only for file-backed ChatGPT auth on macOS-class environments with refresh_token. iPhone/iPad Keychain mode does not refresh."
+            remediationHint: "Refresh is supported only for file-backed ChatGPT auth with refresh_token."
         )
     }
 
@@ -103,22 +101,6 @@ extension SoaError {
             message: "credential refresh failed: \(sanitizeMessage(message))",
             remediationHint: "Refresh the macOS auth.json source again, or replace it with a newly exported credential file.",
             path: path
-        )
-    }
-
-    static func keychainUnavailable() -> Self {
-        .init(
-            category: .keychainUnavailable,
-            message: "keychain is unavailable on this platform",
-            remediationHint: "Use a file-backed auth source on macOS, or run on an Apple platform with Security.framework."
-        )
-    }
-
-    static func keychainFailure(_ message: String) -> Self {
-        .init(
-            category: .keychainFailure,
-            message: "keychain operation failed: \(sanitizeMessage(message))",
-            remediationHint: "Check the app entitlements and Keychain accessibility settings."
         )
     }
 

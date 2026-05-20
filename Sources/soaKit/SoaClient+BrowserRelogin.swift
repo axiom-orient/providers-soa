@@ -99,12 +99,6 @@ extension SoaClient {
                     "current auth file is not safely rewriteable; pass BrowserReloginOptions.persistPath"
                 )
             default:
-                if inspection.state.pathSource == .platformDefaultKeychain {
-                    targetPath = inspection.state.authPath
-                    source = .platformDefaultKeychain
-                    document = nil
-                    break
-                }
                 targetPath = inspection.state.authPath
                 source = inspection.state.pathSource
                 if let parsed = inspection.parsedFile {
@@ -128,9 +122,7 @@ extension SoaClient {
         )
 
         do {
-            if source == .platformDefaultKeychain {
-                try SoaCredentialStore().save(.openAIAPIKey(completed.apiKey))
-            } else if let document {
+            if let document {
                 try persistBrowserReloginAuth(path: targetPath, document: document)
             }
         } catch {

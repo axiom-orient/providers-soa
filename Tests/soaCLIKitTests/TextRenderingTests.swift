@@ -4,6 +4,13 @@ import Foundation
 import soaKit
 
 final class TextRenderingTests: XCTestCase {
+    func testUsageDocumentsFileBackedCodexAuth() {
+        let rendered = CLITextRenderer.usage(executableName: "soa")
+        XCTAssertTrue(rendered.contains("resolved auth.json decides the usable transport"))
+        XCTAssertTrue(rendered.contains("relogin => browser OAuth flow that refreshes or writes auth.json"))
+        XCTAssertFalse(rendered.contains("activates OpenAI API transport"))
+    }
+
     func testRenderAuthStatusIncludesCoreFields() {
         let state = AuthState(
             authPath: "/tmp/auth.json",
